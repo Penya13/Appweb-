@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Training Timer">
+<meta name="theme-color" content="#0D0D12">
+<title>Training Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:#0D0D12;color:#F0F0FF;font-family:'DM Sans','Segoe UI',sans-serif;overflow:hidden;position:fixed;width:100%;}
+  #app{position:fixed;inset:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);overflow:hidden;display:flex;flex-direction:column;}
+  .screen{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:20px 18px 40px;}
+  .bebas{font-family:'Bebas Neue',sans-serif;}
+  input,button,select{font-family:'DM Sans',sans-serif;-webkit-appearance:none;}
+  input{outline:none;color:#F0F0FF;border:none;}
+  input::placeholder{color:#3A3A50;}
+  button{border:none;cursor:pointer;}
+  button:active{opacity:0.75;transform:scale(0.96);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;border-radius:10px;font-family:'Bebas Neue',sans-serif;letter-spacing:2px;font-size:14px;padding:10px 16px;transition:all 0.12s;cursor:pointer;}
+  .btn-accent{background:#E8FF47;color:#0D0D12;border:1px solid #E8FF47;}
+  .btn-normal{background:#13131A;color:#5050A0;border:1px solid #1E1E2A;}
+  .btn-danger{background:none;border:1px solid #FF446633;color:#FF4466;border-radius:8px;font-family:'Bebas Neue',sans-serif;letter-spacing:2px;font-size:11px;padding:8px 14px;}
+  .input-field{width:100%;background:#13131A;border:1px solid #1E1E2A;border-radius:8px;color:#F0F0FF;font-size:16px;padding:12px 14px;font-family:'DM Sans',sans-serif;}
+  .label{font-size:10px;letter-spacing:3px;color:#5050A0;margin-bottom:8px;}
+  .step-btn{width:36px;height:36px;border-radius:8px;background:#13131A;border:1px solid #1E1E2A;color:#F0F0FF;font-size:18px;display:flex;align-items:center;justify-content:center;}
+  .workout-card{background:#13131A;border:1px solid #1E1E2A;border-radius:14px;padding:16px 18px;margin-bottom:12px;}
+  .ex-card{background:#13131A;border:1px solid #1E1E2A;border-radius:12px;padding:14px;margin-bottom:10px;}
+  .run-ex-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid #1E1E2A;background:#13131A;transition:all 0.3s;margin-bottom:6px;}
+  .run-ex-row.active{background:#E8FF4718;border-color:#E8FF4755;}
+  .run-ex-row.resting{background:#38BDF818;border-color:#38BDF844;}
+  .chip{font-size:10px;letter-spacing:1px;color:#3A3A50;background:#1a1a28;padding:3px 8px;border-radius:4px;}
+  ::-webkit-scrollbar{width:3px;}
+  ::-webkit-scrollbar-thumb{background:#1e1e2a;border-radius:4px;}
+  .ring-container{position:relative;width:220px;height:220px;flex-shrink:0;}
+  .ring-glow{position:absolute;inset:30px;border-radius:50%;filter:blur(18px);transition:background 0.5s;}
+  .ring-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 20px;text-align:center;}
+  .ring-svg{position:absolute;transform:rotate(-90deg);}
+  .prog-bar{height:4px;flex:1;border-radius:2px;transition:background 0.5s;}
+  .done-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;}
+  .mode-tabs{display:flex;gap:6px;margin-bottom:6px;}
+  .mode-tab{flex:1;padding:8px 4px;border-radius:8px;font-family:'Bebas Neue',sans-serif;font-size:11px;letter-spacing:1px;text-align:center;cursor:pointer;border:1px solid #1E1E2A;background:#0D0D12;color:#5050A0;transition:all 0.15s;}
+  .mode-tab.work-active{background:#E8FF4722;border-color:#E8FF4766;color:#E8FF47;}
+  .mode-tab.rest-active{background:#38BDF822;border-color:#38BDF866;color:#38BDF8;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+  .pulse{animation:pulse 1.2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div id="app"><div class="screen" id="screen"></div></div>
+<script>
+const uid=()=>Math.random().toString(36).slice(2,8);
+const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+const C={bg:'#0D0D12',surface:'#13131A',border:'#1E1E2A',accent:'#E8FF47',accentDim:'#E8FF4718',rest:'#38BDF8',restDim:'#38BDF818',muted:'#3A3A50',text:'#F0F0FF',sub:'#5050A0'};
+
+// workMode: 'free'=cuenta arriba manual | 'timed'=cuenta atrás | 'none'=sin temporizador, botón directo
+// restMode: 'timed'=cuenta atrás | 'none'=sin descanso (se salta)
+
+function loadWorkouts(){
+  try{return JSON.parse(localStorage.getItem('tt_v3'))||[defaultWorkout()];}catch{return[defaultWorkout()];}
+}
+function saveWorkouts(ws){try{localStorage.setItem('tt_v3',JSON.stringify(ws));}catch{}}
+function defaultWorkout(){
+  return{id:uid(),name:'STRENGTH',sets:4,exercises:[
+    {id:uid(),name:'Bench press',reps:6,note:'75%',workMode:'free',workDuration:40,restMode:'timed',restAfter:60},
+    {id:uid(),name:'Bent over row',reps:6,note:'AHAP',workMode:'free',workDuration:40,restMode:'timed',restAfter:90},
+  ]};
+}
+
+let state={screen:'home',workouts:loadWorkouts(),editData:null,run:null};
+let runTimer=null;
+
+function beep(f=880,d=0.1,v=0.3){try{const c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.start();o.stop(c.currentTime+d);}catch{}}
+const beepGo=()=>{beep(660,.12,.4);setTimeout(()=>beep(660,.12,.4),180);setTimeout(()=>beep(900,.22,.5),360);};
+const beepWarn=()=>beep(440,.08,.22);
+const beepDone=()=>{beep(880,.15,.4);setTimeout(()=>beep(1100,.25,.4),220);};
+
+const scr=document.getElementById('screen');
+function render(){scr.scrollTop=0;if(state.screen==='home')renderHome();else if(state.screen==='edit')renderEdit();else if(state.screen==='run')renderRun();}
+
+// ═══ HOME ════════════════════════════════════════════════
+function renderHome(){
+  const ws=state.workouts;
+  scr.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:28px;">
+    <div>
+      <div style="font-size:10px;letter-spacing:5px;color:${C.sub};margin-bottom:5px;">MIS ENTRENAMIENTOS</div>
+      <div class="bebas" style="font-size:42px;letter-spacing:1px;color:${C.text};line-height:1;">TRAINING<br><span style="color:${C.accent}">TIMER</span></div>
+    </div>
+    <button class="btn btn-accent" id="btn-new" style="height:44px;padding:0 20px;font-size:12px;letter-spacing:3px;">+ NUEVO</button>
+  </div>
+  <div id="wlist"></div>
+  ${ws.length===0?`<div style="text-align:center;padding:40px 0;color:${C.sub};font-size:12px;letter-spacing:3px;">CREA TU PRIMER<br>ENTRENAMIENTO ↑</div>`:''}`;
+  document.getElementById('btn-new').onclick=()=>{state.editData={id:uid(),name:'',sets:3,exercises:[]};state.screen='edit';render();};
+  const wlist=document.getElementById('wlist');
+  ws.forEach(w=>{
+    const div=document.createElement('div');div.className='workout-card';
+    div.innerHTML=`
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <div style="flex:1;min-width:0;">
+        <div class="bebas" style="font-size:22px;letter-spacing:2px;color:${C.text};">${w.name||'SIN NOMBRE'}</div>
+        <div style="font-size:11px;color:${C.sub};margin-top:3px;letter-spacing:1px;">${w.sets} series · ${w.exercises.length} ejercicios</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
+          ${w.exercises.map(e=>`<span class="chip">${e.name}</span>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-shrink:0;">
+        <button class="btn btn-accent btn-start" data-id="${w.id}" style="font-size:11px;letter-spacing:3px;padding:8px 14px;">▶ START</button>
+        <button class="btn btn-normal btn-edit" data-id="${w.id}" style="font-size:11px;letter-spacing:2px;padding:8px 14px;">✎ EDITAR</button>
+        <button class="btn-danger btn-del" data-id="${w.id}">✕ BORRAR</button>
+      </div>
+    </div>`;
+    wlist.appendChild(div);
+  });
+  wlist.querySelectorAll('.btn-start').forEach(b=>b.onclick=()=>startWorkout(b.dataset.id));
+  wlist.querySelectorAll('.btn-edit').forEach(b=>b.onclick=()=>{state.editData=JSON.parse(JSON.stringify(ws.find(w=>w.id===b.dataset.id)));state.screen='edit';render();});
+  wlist.querySelectorAll('.btn-del').forEach(b=>b.onclick=()=>{if(confirm('¿Eliminar?')){state.workouts=state.workouts.filter(w=>w.id!==b.dataset.id);saveWorkouts(state.workouts);render();}});
+}
+
+// ═══ EDIT ════════════════════════════════════════════════
+function renderEdit(){
+  const w=state.editData;
+  scr.innerHTML=`
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+    <button id="btn-back" style="background:none;border:none;color:${C.sub};font-size:26px;line-height:1;padding:4px;">←</button>
+    <div class="bebas" style="font-size:26px;letter-spacing:3px;color:${C.text};">${w.exercises.length?'EDITAR':'NUEVO'} ENTRENO</div>
+  </div>
+  <div class="label">NOMBRE</div>
+  <input id="w-name" class="input-field" type="text" value="${w.name}" placeholder="Ej: PUSH DAY, STRENGTH…" style="margin-bottom:22px;">
+  <div class="label">SERIES TOTALES</div>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:28px;">
+    <button class="step-btn" id="sets-m">−</button>
+    <span id="sets-val" class="bebas" style="font-size:40px;color:${C.accent};min-width:48px;text-align:center;">${w.sets}</span>
+    <button class="step-btn" id="sets-p">+</button>
+    <span style="font-size:11px;color:${C.sub};letter-spacing:3px;">SERIES</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <div class="label" style="margin:0;">EJERCICIOS</div>
+    <button class="btn btn-accent" id="btn-addex" style="font-size:11px;letter-spacing:2px;padding:7px 16px;">+ AÑADIR</button>
+  </div>
+  <div id="exlist"></div>
+  <div style="display:flex;gap:10px;margin-top:8px;">
+    <button class="btn btn-normal" id="btn-cancel" style="flex:1;padding:14px;font-size:14px;letter-spacing:3px;">CANCELAR</button>
+    <button class="btn btn-accent" id="btn-save" style="flex:2;padding:14px;font-size:16px;letter-spacing:3px;">GUARDAR ✓</button>
+  </div>`;
+
+  document.getElementById('btn-back').onclick=document.getElementById('btn-cancel').onclick=()=>{state.screen='home';render();};
+  document.getElementById('w-name').oninput=e=>{w.name=e.target.value;};
+  document.getElementById('sets-m').onclick=()=>{w.sets=Math.max(1,w.sets-1);document.getElementById('sets-val').textContent=w.sets;};
+  document.getElementById('sets-p').onclick=()=>{w.sets++;document.getElementById('sets-val').textContent=w.sets;};
+  document.getElementById('btn-addex').onclick=()=>{
+    w.exercises.push({id:uid(),name:'',reps:8,note:'',workMode:'free',workDuration:40,restMode:'timed',restAfter:60});
+    renderExList();scr.scrollTop=scr.scrollHeight;
+  };
+  document.getElementById('btn-save').onclick=()=>{
+    w.name=document.getElementById('w-name').value.trim()||'SIN NOMBRE';
+    const idx=state.workouts.findIndex(x=>x.id===w.id);
+    if(idx===-1)state.workouts.push(w);else state.workouts[idx]=w;
+    saveWorkouts(state.workouts);state.screen='home';render();
+  };
+
+  function durRow(id,val,color,cls){
+    return `<div class="${cls}-row" data-id="${id}" style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+      <button class="${cls}-m" data-id="${id}" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;display:flex;align-items:center;justify-content:center;">−</button>
+      <span class="${cls}-val bebas" data-id="${id}" style="font-size:26px;color:${color};min-width:60px;text-align:center;">${val}s</span>
+      <button class="${cls}-p" data-id="${id}" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;display:flex;align-items:center;justify-content:center;">+</button>
+      <span style="font-size:10px;color:${C.sub};letter-spacing:2px;">SEGUNDOS</span>
+    </div>`;
+  }
+
+  function renderExList(){
+    const el=document.getElementById('exlist');if(!el)return;el.innerHTML='';
+    if(w.exercises.length===0){
+      el.innerHTML=`<div style="text-align:center;padding:28px;color:${C.sub};font-size:12px;letter-spacing:3px;border:1px dashed ${C.border};border-radius:12px;margin-bottom:16px;">AÑADE EJERCICIOS ↑</div>`;return;
+    }
+    w.exercises.forEach((ex,i)=>{
+      const card=document.createElement('div');card.className='ex-card';
+      card.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span class="bebas" style="font-size:24px;color:${C.accent};min-width:26px;">${i+1}</span>
+        <input type="text" class="ex-name input-field" data-id="${ex.id}" value="${ex.name}" placeholder="Ejercicio…" style="flex:1;font-size:15px;padding:8px 10px;">
+        <button class="mv-up" data-i="${i}" style="background:none;border:1px solid ${C.border};border-radius:6px;color:${C.sub};padding:6px 8px;font-size:13px;">↑</button>
+        <button class="mv-dn" data-i="${i}" style="background:none;border:1px solid ${C.border};border-radius:6px;color:${C.sub};padding:6px 8px;font-size:13px;">↓</button>
+        <button class="del-ex" data-i="${i}" style="background:none;border:1px solid #FF446633;border-radius:6px;color:#FF4466;padding:6px 8px;font-size:13px;">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+        <div>
+          <div class="label">REPS</div>
+          <input type="number" class="ex-reps input-field" data-id="${ex.id}" value="${ex.reps}" min="1" style="font-size:22px;padding:8px 10px;text-align:center;font-family:'Bebas Neue',sans-serif;">
+        </div>
+        <div>
+          <div class="label">NOTA</div>
+          <input type="text" class="ex-note input-field" data-id="${ex.id}" value="${ex.note}" placeholder="75%, AHAP…" style="font-size:14px;padding:8px 10px;">
+        </div>
+      </div>
+
+      <div class="label">⚡ TIEMPO DE TRABAJO</div>
+      <div class="mode-tabs">
+        <div class="mode-tab wt ${ex.workMode==='free'?'work-active':''}" data-id="${ex.id}" data-m="free">∞ LIBRE</div>
+        <div class="mode-tab wt ${ex.workMode==='timed'?'work-active':''}" data-id="${ex.id}" data-m="timed">⏱ TIEMPO</div>
+        <div class="mode-tab wt ${ex.workMode==='none'?'work-active':''}" data-id="${ex.id}" data-m="none">— DIRECTO</div>
+      </div>
+      <div id="wdur-${ex.id}" style="display:${ex.workMode==='timed'?'block':'none'};">
+        ${durRow(ex.id,ex.workDuration,C.accent,'wdur')}
+      </div>
+
+      <div class="label" style="margin-top:14px;">💤 DESCANSO DESPUÉS</div>
+      <div class="mode-tabs">
+        <div class="mode-tab rt ${ex.restMode==='timed'?'rest-active':''}" data-id="${ex.id}" data-m="timed">⏱ CON TIEMPO</div>
+        <div class="mode-tab rt ${ex.restMode==='none'?'rest-active':''}" data-id="${ex.id}" data-m="none">— SIN DESCANSO</div>
+      </div>
+      <div id="rdur-${ex.id}" style="display:${ex.restMode==='timed'?'block':'none'};">
+        ${durRow(ex.id,ex.restAfter,C.rest,'rdur')}
+      </div>`;
+      el.appendChild(card);
+    });
+
+    el.querySelectorAll('.ex-name').forEach(inp=>inp.oninput=e=>{const ex=w.exercises.find(x=>x.id===e.target.dataset.id);if(ex)ex.name=e.target.value;});
+    el.querySelectorAll('.ex-reps').forEach(inp=>inp.oninput=e=>{const ex=w.exercises.find(x=>x.id===e.target.dataset.id);if(ex)ex.reps=Math.max(1,+e.target.value||1);});
+    el.querySelectorAll('.ex-note').forEach(inp=>inp.oninput=e=>{const ex=w.exercises.find(x=>x.id===e.target.dataset.id);if(ex)ex.note=e.target.value;});
+    el.querySelectorAll('.mv-up').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i>0){[w.exercises[i-1],w.exercises[i]]=[w.exercises[i],w.exercises[i-1]];renderExList();}});
+    el.querySelectorAll('.mv-dn').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(i<w.exercises.length-1){[w.exercises[i],w.exercises[i+1]]=[w.exercises[i+1],w.exercises[i]];renderExList();}});
+    el.querySelectorAll('.del-ex').forEach(b=>b.onclick=()=>{w.exercises.splice(+b.dataset.i,1);renderExList();});
+
+    // work mode tabs
+    el.querySelectorAll('.wt').forEach(tab=>tab.onclick=()=>{
+      const ex=w.exercises.find(x=>x.id===tab.dataset.id);if(!ex)return;
+      ex.workMode=tab.dataset.m;
+      document.getElementById(`wdur-${ex.id}`).style.display=ex.workMode==='timed'?'block':'none';
+      el.querySelectorAll(`.wt[data-id="${ex.id}"]`).forEach(t=>{t.classList.toggle('work-active',t.dataset.m===ex.workMode);});
+    });
+    // work dur
+    el.querySelectorAll('.wdur-m').forEach(b=>b.onclick=()=>{const ex=w.exercises.find(x=>x.id===b.dataset.id);if(!ex)return;ex.workDuration=Math.max(5,ex.workDuration-5);el.querySelector(`.wdur-val[data-id="${ex.id}"]`).textContent=ex.workDuration+'s';});
+    el.querySelectorAll('.wdur-p').forEach(b=>b.onclick=()=>{const ex=w.exercises.find(x=>x.id===b.dataset.id);if(!ex)return;ex.workDuration+=5;el.querySelector(`.wdur-val[data-id="${ex.id}"]`).textContent=ex.workDuration+'s';});
+
+    // rest mode tabs
+    el.querySelectorAll('.rt').forEach(tab=>tab.onclick=()=>{
+      const ex=w.exercises.find(x=>x.id===tab.dataset.id);if(!ex)return;
+      ex.restMode=tab.dataset.m;
+      document.getElementById(`rdur-${ex.id}`).style.display=ex.restMode==='timed'?'block':'none';
+      el.querySelectorAll(`.rt[data-id="${ex.id}"]`).forEach(t=>{t.classList.toggle('rest-active',t.dataset.m===ex.restMode);});
+    });
+    // rest dur
+    el.querySelectorAll('.rdur-m').forEach(b=>b.onclick=()=>{const ex=w.exercises.find(x=>x.id===b.dataset.id);if(!ex)return;ex.restAfter=Math.max(5,ex.restAfter-5);el.querySelector(`.rdur-val[data-id="${ex.id}"]`).textContent=ex.restAfter+'s';});
+    el.querySelectorAll('.rdur-p').forEach(b=>b.onclick=()=>{const ex=w.exercises.find(x=>x.id===b.dataset.id);if(!ex)return;ex.restAfter+=5;el.querySelector(`.rdur-val[data-id="${ex.id}"]`).textContent=ex.restAfter+'s';});
+  }
+  renderExList();
+}
+
+// ═══ RUN ═════════════════════════════════════════════════
+// step.type: 'prep' | 'work' | 'rest'
+// work steps: workMode 'free'=manual+elapsed | 'timed'=countdown | 'none'=button only, no timer
+// rest steps: only created if restMode==='timed'
+
+function buildSteps(workout){
+  const steps=[{type:'prep',duration:5}];
+  for(let s=1;s<=workout.sets;s++){
+    workout.exercises.forEach((ex,i)=>{
+      steps.push({type:'work',set:s,exIdx:i,ex});
+      if(ex.restMode==='timed') steps.push({type:'rest',set:s,exIdx:i,ex,duration:ex.restAfter});
+    });
+  }
+  return steps;
+}
+
+function startWorkout(wid){
+  const workout=state.workouts.find(w=>w.id===wid);if(!workout)return;
+  const steps=buildSteps(workout);
+  state.run={workout,steps,stepIdx:0,timeLeft:5,elapsed:0,isPaused:false,done:false};
+  state.screen='run';render();
+  clearInterval(runTimer);
+  runTimer=setInterval(tickRun,1000);
+}
+
+function tickRun(){
+  const r=state.run;if(!r||r.done||r.isPaused)return;
+  const step=r.steps[r.stepIdx];
+
+  if(step.type==='prep'||step.type==='rest'){
+    r.timeLeft--;
+    if(r.timeLeft<=3&&r.timeLeft>0)beepWarn();
+    if(r.timeLeft<=0){advanceRun();return;}
+    updateRunUI();return;
+  }
+
+  if(step.type==='work'){
+    const wm=step.ex.workMode;
+    if(wm==='free'){r.elapsed=(r.elapsed||0)+1;updateRunUI();return;}
+    if(wm==='timed'){
+      r.timeLeft--;
+      if(r.timeLeft<=3&&r.timeLeft>0)beepWarn();
+      if(r.timeLeft<=0){beepDone();advanceRun();return;}
+      updateRunUI();return;
+    }
+    // 'none': do nothing, wait for button
+  }
+}
+
+function advanceRun(){
+  const r=state.run;if(!r)return;
+  r.stepIdx++;r.elapsed=0;
+  if(r.stepIdx>=r.steps.length){r.done=true;clearInterval(runTimer);beepDone();setTimeout(beepDone,400);renderRun();return;}
+  const step=r.steps[r.stepIdx];
+  if(step.type==='prep') r.timeLeft=5;
+  else if(step.type==='rest') r.timeLeft=step.duration;
+  else if(step.type==='work'&&step.ex.workMode==='timed') r.timeLeft=step.ex.workDuration;
+  else r.timeLeft=0;
+  if(step.type==='work') beepGo();
+  renderRun();
+}
+
+function renderRun(){scr.innerHTML=`<div id="run-root"></div>`;updateRunUI();}
+
+function updateRunUI(){
+  const r=state.run;if(!r)return;
+  const el=document.getElementById('run-root');if(!el)return;
+
+  if(r.done){
+    el.innerHTML=`<div class="done-screen">
+      <div class="bebas" style="font-size:58px;color:${C.accent};letter-spacing:3px;line-height:1;">¡COMPLETADO!</div>
+      <div style="font-size:13px;color:${C.sub};letter-spacing:3px;margin-top:10px;">${r.workout.name} · ${r.workout.sets} SERIES</div>
+      <div style="font-size:48px;margin:24px 0;">💪</div>
+      <button class="btn btn-accent" id="btn-done" style="font-size:18px;letter-spacing:4px;padding:16px 40px;">VOLVER</button>
+    </div>`;
+    document.getElementById('btn-done').onclick=()=>{clearInterval(runTimer);state.run=null;state.screen='home';render();};
+    return;
+  }
+
+  const steps=r.steps;
+  const step=steps[r.stepIdx];
+  const isPrep=step.type==='prep';
+  const isWork=step.type==='work';
+  const isRest=step.type==='rest';
+  const wm=isWork?step.ex.workMode:null;
+  const isFree=wm==='free', isTimed=wm==='timed', isNone=wm==='none';
+  const accentColor=isRest?C.rest:C.accent;
+  const totalSets=r.workout.sets;
+  const currentSet=(isWork||isRest)?step.set:1;
+  const nextStep=steps[r.stepIdx+1]||null;
+
+  const circ=2*Math.PI*100;
+  let dashOffset=circ;
+  if(isPrep){dashOffset=circ*(1-(r.timeLeft/5));}
+  else if(isRest){dashOffset=circ*(1-(r.timeLeft/step.duration));}
+  else if(isTimed){dashOffset=circ*(1-(r.timeLeft/step.ex.workDuration));}
+  const showArc=isPrep||isRest||isTimed;
+
+  const setsFinished=r.steps.slice(0,r.stepIdx).filter(s=>s.type==='rest'&&s.exIdx===r.workout.exercises.length-1).length;
+
+  let nextLabel='';
+  if(nextStep){
+    if(nextStep.type==='rest') nextLabel=`DESCANSO ${nextStep.duration}s`;
+    else if(nextStep.type==='work') nextLabel=nextStep.ex.name.toUpperCase();
+  }
+
+  // work center content
+  let centerHtml='';
+  if(isPrep){
+    centerHtml=`<div class="bebas" style="font-size:68px;color:${C.accent};line-height:1;">${r.timeLeft}</div>
+      <div style="font-size:10px;letter-spacing:5px;color:${C.sub};">PREPÁRATE</div>`;
+  } else if(isWork){
+    const bigNum=isTimed?`<div class="bebas" style="font-size:32px;color:${C.accent}88;margin-top:2px;">${r.timeLeft}s</div>`
+      :isFree?`<div class="bebas pulse" style="font-size:24px;color:${C.sub};margin-top:4px;">${fmt(r.elapsed||0)}</div>`
+      :`<div style="font-size:11px;letter-spacing:3px;color:${C.sub};margin-top:6px;">PULSA HECHO</div>`;
+    centerHtml=`
+      <div style="font-size:10px;letter-spacing:4px;color:${C.sub};">SERIE ${step.set}</div>
+      <div class="bebas" style="font-size:${step.ex.name.length>12?'16':'20'}px;color:${C.text};margin-top:4px;line-height:1.1;">${step.ex.name}</div>
+      ${step.ex.note?`<div style="font-size:12px;letter-spacing:2px;color:${C.accent};margin-top:3px;">${step.ex.note}</div>`:''}
+      <div class="bebas" style="font-size:52px;color:${C.accent};line-height:1;margin-top:4px;">×${step.ex.reps}</div>
+      ${bigNum}`;
+  } else if(isRest){
+    centerHtml=`<div style="font-size:10px;letter-spacing:5px;color:${C.sub};">DESCANSO</div>
+      <div class="bebas" style="font-size:68px;color:${C.rest};line-height:1;">${r.timeLeft}</div>
+      <div style="font-size:10px;letter-spacing:4px;color:${C.sub};">SEG</div>`;
+  }
+
+  el.innerHTML=`
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <button id="btn-exit" style="background:none;border:none;color:${C.sub};font-size:26px;padding:4px;">←</button>
+    <div class="bebas" style="font-size:20px;letter-spacing:3px;color:${C.text};flex:1;">${r.workout.name}</div>
+    <div class="bebas" style="font-size:15px;color:${C.sub};">S${currentSet}/${totalSets}</div>
+  </div>
+
+  <div style="display:flex;gap:4px;margin-bottom:20px;">
+    ${Array.from({length:totalSets},(_,i)=>`<div class="prog-bar" style="background:${i<setsFinished?C.accent:i===currentSet-1?(isRest?C.rest:C.accent)+'55':C.border};"></div>`).join('')}
+  </div>
+
+  <div style="display:flex;justify-content:center;margin-bottom:16px;">
+    <div class="ring-container">
+      <div class="ring-glow" style="background:radial-gradient(circle,${isRest?C.restDim:C.accentDim} 0%,transparent 70%);"></div>
+      <svg class="ring-svg" width="220" height="220" viewBox="0 0 220 220">
+        <circle cx="110" cy="110" r="100" fill="none" stroke="${C.border}" stroke-width="4"/>
+        ${showArc?`<circle cx="110" cy="110" r="100" fill="none" stroke="${accentColor}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${dashOffset}" style="transition:stroke-dashoffset 0.85s linear;"/>`:''}
+        ${isFree?`<circle cx="110" cy="110" r="100" fill="none" stroke="${C.accent}18" stroke-width="8"/>`:''}
+      </svg>
+      <div class="ring-inner">${centerHtml}</div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:14px;">
+    ${r.workout.exercises.map((ex,i)=>{
+      const isCur=isWork&&step.exIdx===i;
+      const isRC=isRest&&step.exIdx===i;
+      const wLabel=ex.workMode==='free'?'∞':ex.workMode==='timed'?ex.workDuration+'s':'—';
+      const rLabel=ex.restMode==='timed'?ex.restAfter+'s':'—';
+      return `<div class="run-ex-row${isCur?' active':isRC?' resting':''}">
+        <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+          background:${isCur?C.accent:isRC?C.rest:C.border};color:${isCur||isRC?'#000':C.sub};
+          font-size:12px;font-family:'Bebas Neue',sans-serif;flex-shrink:0;">
+          ${isCur?'▶':isRC?'⏸':i+1}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;letter-spacing:1px;color:${isCur?C.accent:isRC?C.rest:C.text};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ex.name}</div>
+          <div style="font-size:10px;color:${C.sub};letter-spacing:1px;margin-top:1px;">${ex.reps} reps${ex.note?' · '+ex.note:''} · trabajo ${wLabel} · desc ${rLabel}</div>
+        </div>
+        ${isRC?`<div class="bebas" style="font-size:22px;color:${C.rest};flex-shrink:0;">${r.timeLeft}s</div>`:''}
+        ${isCur&&isFree?`<div class="bebas" style="font-size:18px;color:${C.sub};flex-shrink:0;">${fmt(r.elapsed||0)}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>
+
+  ${nextLabel?`<div style="font-size:10px;letter-spacing:3px;color:${C.sub};text-align:center;margin-bottom:12px;">SIGUIENTE → ${nextLabel}</div>`:''}
+
+  <div style="display:flex;gap:10px;">
+    ${isPrep
+      ?`<div style="flex:1;padding:16px;text-align:center;font-size:13px;letter-spacing:4px;color:${C.sub};background:${C.surface};border:1px solid ${C.border};border-radius:10px;font-family:'Bebas Neue',sans-serif;">PREPARANDO…</div>`
+      :isWork
+        ?`<button class="btn btn-accent" id="btn-adv" style="flex:1;padding:18px;font-size:18px;letter-spacing:4px;">HECHO ✓</button>`
+        :`<button class="btn btn-normal" id="btn-pause" style="flex:2;padding:16px;font-size:15px;letter-spacing:3px;">${r.isPaused?'▶ REANUDAR':'⏸ PAUSA'}</button>
+          <button class="btn btn-accent" id="btn-skip" style="flex:1;padding:16px;font-size:13px;letter-spacing:2px;">SKIP →</button>`}
+  </div>`;
+
+  document.getElementById('btn-exit').onclick=()=>{if(confirm('¿Salir?')){clearInterval(runTimer);state.run=null;state.screen='home';render();}};
+  document.getElementById('btn-adv')?.addEventListener('click',advanceRun);
+  document.getElementById('btn-pause')?.addEventListener('click',()=>{r.isPaused=!r.isPaused;updateRunUI();});
+  document.getElementById('btn-skip')?.addEventListener('click',advanceRun);
+}
+
+// ── Wake Lock ────────────────────────────────────────────
+let wakeLock=null;
+async function requestWakeLock(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch{}}
+async function releaseWakeLock(){try{if(wakeLock){await wakeLock.release();wakeLock=null;}}catch{}}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&state.screen==='run')requestWakeLock();
+  else releaseWakeLock();
+});
+
+render();
+</script>
+</body>
+</html>
