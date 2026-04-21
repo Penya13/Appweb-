@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Training Timer">
+<meta name="theme-color" content="#0D0D12">
+<title>Training Timer</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;background:#0D0D12;color:#F0F0FF;font-family:'DM Sans',sans-serif;overflow:hidden;position:fixed;width:100%;}
+#app{position:fixed;inset:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);display:flex;flex-direction:column;background:#0D0D12;}
+#scr{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px 48px;}
+.B{font-family:'Bebas Neue',sans-serif;}
+input,button{-webkit-appearance:none;font-family:'DM Sans',sans-serif;}
+input{outline:none;color:#F0F0FF;border:none;background:none;}
+input::placeholder{color:#3A3A50;}
+button{border:none;cursor:pointer;}
+button:active{opacity:0.7;}
+.ba{display:flex;align-items:center;justify-content:center;border-radius:10px;font-family:'Bebas Neue',sans-serif;letter-spacing:2px;font-size:14px;padding:12px 16px;background:#E8FF47;color:#0D0D12;border:1px solid #E8FF47;}
+.bn{display:flex;align-items:center;justify-content:center;border-radius:10px;font-family:'Bebas Neue',sans-serif;letter-spacing:2px;font-size:14px;padding:12px 16px;background:#13131A;color:#5050A0;border:1px solid #1E1E2A;}
+.fi{width:100%;background:#13131A;border:1px solid #1E1E2A;border-radius:8px;color:#F0F0FF;font-size:15px;padding:10px 12px;}
+.lbl{font-size:10px;letter-spacing:3px;color:#5050A0;margin-bottom:7px;}
+.card{background:#13131A;border:1px solid #1E1E2A;border-radius:14px;padding:16px;margin-bottom:12px;}
+.exc{background:#13131A;border:1px solid #1E1E2A;border-radius:12px;padding:14px;margin-bottom:10px;}
+.mtab{flex:1;padding:8px 2px;border-radius:8px;font-family:'Bebas Neue',sans-serif;font-size:10px;letter-spacing:1px;text-align:center;border:1px solid #1E1E2A;background:#0D0D12;color:#5050A0;}
+.mta{background:#E8FF4720;border-color:#E8FF4760;color:#E8FF47;}
+.mtr{background:#38BDF820;border-color:#38BDF860;color:#38BDF8;}
+.rrow{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:1px solid #1E1E2A;background:#13131A;margin-bottom:6px;}
+.rrow.ac{background:#E8FF4715;border-color:#E8FF4750;}
+.rrow.rs{background:#38BDF815;border-color:#38BDF850;}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.3}}
+.pu{animation:pu 1.2s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div id="app"><div id="scr"></div></div>
+<script>
+var uid=function(){return Math.random().toString(36).slice(2,8);};
+var fmt=function(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+
+function mkWorkout(){
+  return {id:uid(),name:'STRENGTH',sets:4,exercises:[
+    {id:uid(),name:'Bench press',reps:6,note:'75%',wm:'free',wd:40,rm:'timed',rd:60},
+    {id:uid(),name:'Bent over row',reps:6,note:'AHAP',wm:'free',wd:40,rm:'timed',rd:90}
+  ]};
+}
+
+var WS=[];
+try{ WS=JSON.parse(localStorage.getItem('tt')||'[]'); }catch(e){}
+if(!WS||!WS.length){ WS=[mkWorkout()]; }
+
+var screen='home', editW=null, run=null, timer=null;
+
+function save(){ try{localStorage.setItem('tt',JSON.stringify(WS));}catch(e){} }
+
+// ── audio ──
+function beep(f,d,v){
+  try{
+    var ctx=new(window.AudioContext||window.webkitAudioContext)();
+    var o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=f||880;
+    g.gain.setValueAtTime(v||0.3,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+(d||0.1));
+    o.start();o.stop(ctx.currentTime+(d||0.1));
+  }catch(e){}
+}
+function bGo(){beep(660,.12,.4);setTimeout(function(){beep(660,.12,.4);},180);setTimeout(function(){beep(900,.22,.5);},360);}
+function bWarn(){beep(440,.08,.2);}
+function bDone(){beep(880,.15,.4);setTimeout(function(){beep(1100,.25,.4);},220);}
+
+// ── render ──
+var scr=document.getElementById('scr');
+function go(){
+  scr.scrollTop=0;
+  if(screen==='home') renderHome();
+  else if(screen==='edit') renderEdit();
+  else if(screen==='run') renderRun();
+}
+
+// ═══════════════════════════
+// HOME
+// ═══════════════════════════
+function renderHome(){
+  var h='<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:28px;">'
+    +'<div><div style="font-size:10px;letter-spacing:5px;color:#5050A0;margin-bottom:5px;">MIS ENTRENAMIENTOS</div>'
+    +'<div class="B" style="font-size:40px;color:#F0F0FF;line-height:1;">TRAINING<br><span style="color:#E8FF47">TIMER</span></div></div>'
+    +'<button class="ba" id="bnew" style="height:44px;padding:0 18px;font-size:12px;letter-spacing:3px;">+ NUEVO</button></div>'
+    +'<div id="wlist">';
+  if(!WS.length) h+='<div style="text-align:center;padding:40px 0;color:#5050A0;font-size:12px;letter-spacing:3px;">AÑADE UN ENTRENAMIENTO ↑</div>';
+  WS.forEach(function(w,wi){
+    h+='<div class="card"><div style="display:flex;gap:12px;align-items:flex-start;">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div class="B" style="font-size:20px;letter-spacing:2px;color:#F0F0FF;">'+(w.name||'SIN NOMBRE')+'</div>'
+      +'<div style="font-size:11px;color:#5050A0;margin-top:3px;">'+w.sets+' series · '+w.exercises.length+' ejercicios</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">'
+      +w.exercises.map(function(e){return '<span style="font-size:10px;color:#3A3A50;background:#1a1a28;padding:2px 8px;border-radius:4px;">'+e.name+'</span>';}).join('')
+      +'</div></div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">'
+      +'<button class="ba bst" data-i="'+wi+'" style="font-size:11px;letter-spacing:3px;padding:8px 12px;">▶ START</button>'
+      +'<button class="bn bed" data-i="'+wi+'" style="font-size:11px;letter-spacing:2px;padding:8px 12px;">✎ EDITAR</button>'
+      +'<button class="bdl" data-i="'+wi+'" style="background:none;border:1px solid #FF446633;border-radius:8px;color:#FF4466;font-family:\'Bebas Neue\',sans-serif;letter-spacing:2px;font-size:11px;padding:8px 12px;">✕ BORRAR</button>'
+      +'</div></div></div>';
+  });
+  h+='</div>';
+  scr.innerHTML=h;
+
+  document.getElementById('bnew').onclick=function(){
+    editW={id:uid(),name:'',sets:3,exercises:[]};screen='edit';go();
+  };
+  scr.querySelectorAll('.bst').forEach(function(b){
+    b.onclick=function(){ startRun(parseInt(b.dataset.i)); };
+  });
+  scr.querySelectorAll('.bed').forEach(function(b){
+    b.onclick=function(){ editW=JSON.parse(JSON.stringify(WS[parseInt(b.dataset.i)]));screen='edit';go(); };
+  });
+  scr.querySelectorAll('.bdl').forEach(function(b){
+    b.onclick=function(){
+      if(confirm('¿Eliminar?')){ WS.splice(parseInt(b.dataset.i),1);save();go(); }
+    };
+  });
+}
+
+// ═══════════════════════════
+// EDIT
+// ═══════════════════════════
+function renderEdit(){
+  var w=editW;
+  scr.innerHTML='<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">'
+    +'<button id="bbk" style="background:none;border:none;color:#5050A0;font-size:28px;padding:2px 8px 2px 0;">←</button>'
+    +'<div class="B" style="font-size:24px;letter-spacing:3px;color:#F0F0FF;">'+(w.exercises.length?'EDITAR':'NUEVO')+' ENTRENO</div></div>'
+    +'<div class="lbl">NOMBRE</div>'
+    +'<input id="wn" class="fi" type="text" value="'+esc(w.name)+'" placeholder="PUSH DAY, STRENGTH…" style="margin-bottom:20px;">'
+    +'<div class="lbl">SERIES</div>'
+    +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">'
+    +'<button id="sm" style="width:36px;height:36px;border-radius:8px;background:#13131A;border:1px solid #1E1E2A;color:#F0F0FF;font-size:20px;">−</button>'
+    +'<span id="sv" class="B" style="font-size:38px;color:#E8FF47;min-width:44px;text-align:center;">'+w.sets+'</span>'
+    +'<button id="sp" style="width:36px;height:36px;border-radius:8px;background:#13131A;border:1px solid #1E1E2A;color:#F0F0FF;font-size:20px;">+</button>'
+    +'<span style="font-size:10px;color:#5050A0;letter-spacing:3px;">SERIES</span></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+    +'<div class="lbl" style="margin:0;">EJERCICIOS</div>'
+    +'<button class="ba" id="badd" style="font-size:11px;letter-spacing:2px;padding:7px 14px;">+ AÑADIR</button></div>'
+    +'<div id="exl"></div>'
+    +'<div style="display:flex;gap:10px;margin-top:4px;">'
+    +'<button class="bn" id="bcan" style="flex:1;padding:14px;font-size:14px;letter-spacing:3px;">CANCELAR</button>'
+    +'<button class="ba" id="bsav" style="flex:2;padding:14px;font-size:16px;letter-spacing:3px;">GUARDAR ✓</button></div>';
+
+  document.getElementById('bbk').onclick=document.getElementById('bcan').onclick=function(){screen='home';go();};
+  document.getElementById('wn').oninput=function(e){w.name=e.target.value;};
+  document.getElementById('sm').onclick=function(){w.sets=Math.max(1,w.sets-1);document.getElementById('sv').textContent=w.sets;};
+  document.getElementById('sp').onclick=function(){w.sets++;document.getElementById('sv').textContent=w.sets;};
+  document.getElementById('badd').onclick=function(){
+    w.exercises.push({id:uid(),name:'',reps:8,note:'',wm:'free',wd:40,rm:'timed',rd:60});
+    drawExList();scr.scrollTop=99999;
+  };
+  document.getElementById('bsav').onclick=function(){
+    w.name=document.getElementById('wn').value.trim()||'SIN NOMBRE';
+    var idx=WS.findIndex(function(x){return x.id===w.id;});
+    if(idx===-1) WS.push(w); else WS[idx]=w;
+    save();screen='home';go();
+  };
+
+  function drawExList(){
+    var el=document.getElementById('exl');
+    if(!el) return;
+    if(!w.exercises.length){
+      el.innerHTML='<div style="text-align:center;padding:24px;color:#5050A0;font-size:12px;letter-spacing:3px;border:1px dashed #1E1E2A;border-radius:12px;margin-bottom:12px;">AÑADE EJERCICIOS ↑</div>';
+      return;
+    }
+    var h='';
+    w.exercises.forEach(function(ex,i){
+      h+='<div class="exc" data-ei="'+i+'">'
+        +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+        +'<span class="B" style="font-size:22px;color:#E8FF47;min-width:24px;">'+(i+1)+'</span>'
+        +'<input type="text" class="fi exn" data-ei="'+i+'" value="'+esc(ex.name)+'" placeholder="Ejercicio…" style="flex:1;padding:8px 10px;font-size:14px;">'
+        +'<button class="mup" data-ei="'+i+'" style="background:none;border:1px solid #1E1E2A;border-radius:6px;color:#5050A0;padding:5px 8px;">↑</button>'
+        +'<button class="mdn" data-ei="'+i+'" style="background:none;border:1px solid #1E1E2A;border-radius:6px;color:#5050A0;padding:5px 8px;">↓</button>'
+        +'<button class="mdl" data-ei="'+i+'" style="background:none;border:1px solid #FF446633;border-radius:6px;color:#FF4466;padding:5px 8px;">✕</button></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
+        +'<div><div class="lbl">REPS</div><input type="number" class="fi exr" data-ei="'+i+'" value="'+ex.reps+'" min="1" style="font-size:22px;text-align:center;font-family:\'Bebas Neue\',sans-serif;padding:8px;"></div>'
+        +'<div><div class="lbl">NOTA</div><input type="text" class="fi exnt" data-ei="'+i+'" value="'+esc(ex.note)+'" placeholder="75%, AHAP…" style="padding:8px 10px;font-size:14px;"></div></div>'
+        // work mode
+        +'<div class="lbl">⚡ TRABAJO</div>'
+        +'<div style="display:flex;gap:5px;margin-bottom:8px;">'
+        +'<button class="mtab wmt'+(ex.wm==='free'?' mta':'')+'" data-ei="'+i+'" data-m="free">∞ LIBRE</button>'
+        +'<button class="mtab wmt'+(ex.wm==='timed'?' mta':'')+'" data-ei="'+i+'" data-m="timed">⏱ TIEMPO</button>'
+        +'<button class="mtab wmt'+(ex.wm==='none'?' mta':'')+'" data-ei="'+i+'" data-m="none">— DIRECTO</button></div>'
+        +'<div class="wdr" data-ei="'+i+'" style="display:'+(ex.wm==='timed'?'flex':'none')+';align-items:center;gap:8px;margin-bottom:10px;">'
+        +'<button class="wdm" data-ei="'+i+'" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;">−</button>'
+        +'<span class="wdv B" data-ei="'+i+'" style="font-size:26px;color:#E8FF47;min-width:56px;text-align:center;">'+ex.wd+'s</span>'
+        +'<button class="wdp" data-ei="'+i+'" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;">+</button>'
+        +'<span style="font-size:10px;color:#5050A0;letter-spacing:2px;">SEG</span></div>'
+        // rest mode
+        +'<div class="lbl">💤 DESCANSO</div>'
+        +'<div style="display:flex;gap:5px;margin-bottom:8px;">'
+        +'<button class="mtab rmt'+(ex.rm==='timed'?' mtr':'')+'" data-ei="'+i+'" data-m="timed">⏱ CON TIEMPO</button>'
+        +'<button class="mtab rmt'+(ex.rm==='none'?' mtr':'')+'" data-ei="'+i+'" data-m="none">— SIN DESC</button></div>'
+        +'<div class="rdr" data-ei="'+i+'" style="display:'+(ex.rm==='timed'?'flex':'none')+';align-items:center;gap:8px;">'
+        +'<button class="rdm" data-ei="'+i+'" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;">−</button>'
+        +'<span class="rdv B" data-ei="'+i+'" style="font-size:26px;color:#38BDF8;min-width:56px;text-align:center;">'+ex.rd+'s</span>'
+        +'<button class="rdp" data-ei="'+i+'" style="width:34px;height:34px;border-radius:7px;background:#0D0D12;border:1px solid #1E1E2A;color:#F0F0FF;font-size:16px;">+</button>'
+        +'<span style="font-size:10px;color:#5050A0;letter-spacing:2px;">SEG</span></div>'
+        +'</div>';
+    });
+    el.innerHTML=h;
+
+    // wire inputs
+    el.querySelectorAll('.exn').forEach(function(inp){inp.oninput=function(e){w.exercises[+e.target.dataset.ei].name=e.target.value;};});
+    el.querySelectorAll('.exr').forEach(function(inp){inp.oninput=function(e){w.exercises[+e.target.dataset.ei].reps=Math.max(1,+e.target.value||1);};});
+    el.querySelectorAll('.exnt').forEach(function(inp){inp.oninput=function(e){w.exercises[+e.target.dataset.ei].note=e.target.value;};});
+    el.querySelectorAll('.mup').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei;if(i>0){var tmp=w.exercises[i-1];w.exercises[i-1]=w.exercises[i];w.exercises[i]=tmp;drawExList();}};});
+    el.querySelectorAll('.mdn').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei;if(i<w.exercises.length-1){var tmp=w.exercises[i+1];w.exercises[i+1]=w.exercises[i];w.exercises[i]=tmp;drawExList();}};});
+    el.querySelectorAll('.mdl').forEach(function(b){b.onclick=function(){w.exercises.splice(+b.dataset.ei,1);drawExList();};});
+
+    // work mode tabs
+    el.querySelectorAll('.wmt').forEach(function(b){b.onclick=function(){
+      var i=+b.dataset.ei,m=b.dataset.m;
+      w.exercises[i].wm=m;
+      el.querySelectorAll('.wmt[data-ei="'+i+'"]').forEach(function(t){t.className='mtab wmt'+(t.dataset.m===m?' mta':'');});
+      el.querySelectorAll('.wdr[data-ei="'+i+'"]').forEach(function(d){d.style.display=m==='timed'?'flex':'none';});
+    };});
+    el.querySelectorAll('.wdm').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei,ex=w.exercises[i];ex.wd=Math.max(5,ex.wd-5);el.querySelector('.wdv[data-ei="'+i+'"]').textContent=ex.wd+'s';};});
+    el.querySelectorAll('.wdp').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei,ex=w.exercises[i];ex.wd+=5;el.querySelector('.wdv[data-ei="'+i+'"]').textContent=ex.wd+'s';};});
+
+    // rest mode tabs
+    el.querySelectorAll('.rmt').forEach(function(b){b.onclick=function(){
+      var i=+b.dataset.ei,m=b.dataset.m;
+      w.exercises[i].rm=m;
+      el.querySelectorAll('.rmt[data-ei="'+i+'"]').forEach(function(t){t.className='mtab rmt'+(t.dataset.m===m?' mtr':'');});
+      el.querySelectorAll('.rdr[data-ei="'+i+'"]').forEach(function(d){d.style.display=m==='timed'?'flex':'none';});
+    };});
+    el.querySelectorAll('.rdm').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei,ex=w.exercises[i];ex.rd=Math.max(5,ex.rd-5);el.querySelector('.rdv[data-ei="'+i+'"]').textContent=ex.rd+'s';};});
+    el.querySelectorAll('.rdp').forEach(function(b){b.onclick=function(){var i=+b.dataset.ei,ex=w.exercises[i];ex.rd+=5;el.querySelector('.rdv[data-ei="'+i+'"]').textContent=ex.rd+'s';};});
+  }
+  drawExList();
+}
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+// ═══════════════════════════
+// RUN
+// ═══════════════════════════
+function buildSteps(w){
+  var steps=[{t:'prep',dur:5}];
+  for(var s=1;s<=w.sets;s++){
+    w.exercises.forEach(function(ex,i){
+      steps.push({t:'work',set:s,ei:i,ex:ex});
+      if(ex.rm==='timed') steps.push({t:'rest',set:s,ei:i,ex:ex,dur:ex.rd});
+    });
+  }
+  return steps;
+}
+
+function startRun(wi){
+  var w=WS[wi];
+  if(!w) return;
+  var steps=buildSteps(w);
+  run={w:w,steps:steps,si:0,tl:5,el:0,paused:false,done:false};
+  screen='run';go();
+  clearInterval(timer);
+  timer=setInterval(tick,1000);
+}
+
+function tick(){
+  if(!run||run.done||run.paused) return;
+  var s=run.steps[run.si];
+  if(s.t==='prep'||s.t==='rest'){
+    run.tl--;
+    if(run.tl<=3&&run.tl>0) bWarn();
+    if(run.tl<=0){ advance(); return; }
+    patchUI(); return;
+  }
+  if(s.t==='work'){
+    if(s.ex.wm==='free'){ run.el++;patchUI();return; }
+    if(s.ex.wm==='timed'){
+      run.tl--;
+      if(run.tl<=3&&run.tl>0) bWarn();
+      if(run.tl<=0){ bDone();advance();return; }
+      patchUI();return;
+    }
+    // 'none': wait for button
+  }
+}
+
+function advance(){
+  run.si++;run.el=0;
+  if(run.si>=run.steps.length){ run.done=true;clearInterval(timer);bDone();setTimeout(bDone,400);renderRun();return; }
+  var s=run.steps[run.si];
+  if(s.t==='prep') run.tl=5;
+  else if(s.t==='rest') run.tl=s.dur;
+  else if(s.t==='work'&&s.ex.wm==='timed') run.tl=s.ex.wd;
+  else run.tl=0;
+  if(s.t==='work') bGo();
+  renderRun();
+}
+
+function renderRun(){
+  scr.innerHTML='<div id="rr"></div>';
+  drawRun();
+}
+
+// patch only the dynamic numbers without re-rendering everything
+function patchUI(){
+  var tEl=document.getElementById('rtl');
+  var eEl=document.getElementById('rel');
+  if(tEl) tEl.textContent=run.tl;
+  if(eEl) eEl.textContent=fmt(run.el);
+  // update rest time in row
+  var rtEl=document.getElementById('rrt');
+  if(rtEl) rtEl.textContent=run.tl+'s';
+  // update ring arc
+  var arc=document.getElementById('rarc');
+  if(arc){
+    var s=run.steps[run.si];
+    var circ=2*Math.PI*100;
+    var total=s.t==='prep'?5:(s.t==='rest'?s.dur:s.ex.wd);
+    var offset=circ*(1-(run.tl/total));
+    arc.style.strokeDashoffset=offset;
+  }
+}
+
+function drawRun(){
+  var rr=document.getElementById('rr');
+  if(!rr) return;
+  if(!run){ rr.innerHTML='';return; }
+
+  if(run.done){
+    rr.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:65vh;text-align:center;">'
+      +'<div class="B" style="font-size:56px;color:#E8FF47;letter-spacing:3px;line-height:1;">¡COMPLETADO!</div>'
+      +'<div style="font-size:13px;color:#5050A0;letter-spacing:3px;margin-top:10px;">'+run.w.name+' · '+run.w.sets+' SERIES</div>'
+      +'<div style="font-size:44px;margin:24px 0;">💪</div>'
+      +'<button class="ba" id="bdone" style="font-size:18px;letter-spacing:4px;padding:16px 40px;">VOLVER</button></div>';
+    document.getElementById('bdone').onclick=function(){clearInterval(timer);run=null;screen='home';go();};
+    return;
+  }
+
+  var steps=run.steps, si=run.si, s=steps[si];
+  var isPrep=s.t==='prep', isWork=s.t==='work', isRest=s.t==='rest';
+  var wm=isWork?s.ex.wm:null;
+  var isFree=wm==='free', isTimed=wm==='timed';
+  var col=isRest?'#38BDF8':'#E8FF47';
+  var totalSets=run.w.sets;
+  var curSet=(isWork||isRest)?s.set:1;
+  var next=steps[si+1]||null;
+  var circ=2*Math.PI*100;
+  var total=isPrep?5:(isRest?s.dur:(isTimed?s.ex.wd:1));
+  var offset=circ*(1-(run.tl/total));
+  var showArc=isPrep||isRest||isTimed;
+  var setsOk=0;
+  for(var k=0;k<si;k++){ if(steps[k].t==='rest'&&steps[k].ei===run.w.exercises.length-1) setsOk++; }
+
+  // ring center
+  var center='';
+  if(isPrep){
+    center='<div class="B" id="rtl" style="font-size:66px;color:#E8FF47;line-height:1;">'+run.tl+'</div>'
+      +'<div style="font-size:10px;letter-spacing:5px;color:#5050A0;">PREPÁRATE</div>';
+  } else if(isWork){
+    center='<div style="font-size:10px;letter-spacing:4px;color:#5050A0;">SERIE '+s.set+'</div>'
+      +'<div class="B" style="font-size:'+(s.ex.name.length>12?'15':'19')+'px;color:#F0F0FF;margin-top:4px;line-height:1.1;">'+esc(s.ex.name)+'</div>'
+      +(s.ex.note?'<div style="font-size:12px;letter-spacing:2px;color:#E8FF47;margin-top:3px;">'+esc(s.ex.note)+'</div>':'')
+      +'<div class="B" style="font-size:50px;color:#E8FF47;line-height:1;margin-top:4px;">×'+s.ex.reps+'</div>'
+      +(isTimed?'<div class="B" id="rtl" style="font-size:28px;color:#E8FF4799;margin-top:2px;">'+run.tl+'s</div>':'')
+      +(isFree?'<div class="B pu" id="rel" style="font-size:22px;color:#5050A0;margin-top:4px;">'+fmt(run.el)+'</div>':'')
+      +(wm==='none'?'<div style="font-size:10px;letter-spacing:3px;color:#5050A0;margin-top:6px;">PULSA HECHO</div>':'');
+  } else if(isRest){
+    center='<div style="font-size:10px;letter-spacing:5px;color:#5050A0;">DESCANSO</div>'
+      +'<div class="B" id="rtl" style="font-size:66px;color:#38BDF8;line-height:1;">'+run.tl+'</div>'
+      +'<div style="font-size:10px;letter-spacing:4px;color:#5050A0;">SEG</div>';
+  }
+
+  // next label
+  var nextLbl='';
+  if(next){ nextLbl=next.t==='rest'?('DESCANSO '+next.dur+'s'):next.t==='work'?next.ex.name.toUpperCase():''; }
+
+  // exercise rows
+  var rows='';
+  run.w.exercises.forEach(function(ex,i){
+    var isCur=isWork&&s.ei===i, isRst=isRest&&s.ei===i;
+    var wLbl=ex.wm==='free'?'∞':ex.wm==='timed'?ex.wd+'s':'—';
+    var rLbl=ex.rm==='timed'?ex.rd+'s':'—';
+    rows+='<div class="rrow'+(isCur?' ac':isRst?' rs':'')+'">'
+      +'<div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;'
+      +'background:'+(isCur?'#E8FF47':isRst?'#38BDF8':'#1E1E2A')+';'
+      +'color:'+(isCur||isRst?'#000':'#5050A0')+';font-size:12px;font-family:\'Bebas Neue\',sans-serif;flex-shrink:0;">'
+      +(isCur?'▶':isRst?'⏸':i+1)+'</div>'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:14px;color:'+(isCur?'#E8FF47':isRst?'#38BDF8':'#F0F0FF')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(ex.name)+'</div>'
+      +'<div style="font-size:10px;color:#5050A0;margin-top:1px;">'+ex.reps+' reps'+(ex.note?' · '+esc(ex.note):'')+' · trabajo '+wLbl+' · desc '+rLbl+'</div>'
+      +'</div>'
+      +(isRst?'<div class="B" id="rrt" style="font-size:20px;color:#38BDF8;flex-shrink:0;">'+run.tl+'s</div>':'')
+      +(isCur&&isFree?'<div class="B" id="rel" style="font-size:16px;color:#5050A060;flex-shrink:0;">'+fmt(run.el)+'</div>':'')
+      +'</div>';
+  });
+
+  rr.innerHTML=
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'
+    +'<button id="bex" style="background:none;border:none;color:#5050A0;font-size:26px;padding:4px 8px 4px 0;">←</button>'
+    +'<div class="B" style="font-size:19px;letter-spacing:3px;color:#F0F0FF;flex:1;">'+esc(run.w.name)+'</div>'
+    +'<div class="B" style="font-size:14px;color:#5050A0;">S'+curSet+'/'+totalSets+'</div></div>'
+
+    +'<div style="display:flex;gap:4px;margin-bottom:18px;">'
+    +Array.from({length:totalSets},function(_,i){
+      return '<div style="height:4px;flex:1;border-radius:2px;background:'+(i<setsOk?'#E8FF47':i===curSet-1?(isRest?'#38BDF8':'#E8FF47')+'55':'#1E1E2A')+'"></div>';
+    }).join('')+'</div>'
+
+    +'<div style="display:flex;justify-content:center;margin-bottom:16px;">'
+    +'<div style="position:relative;width:210px;height:210px;">'
+    +'<div style="position:absolute;inset:30px;border-radius:50%;background:radial-gradient(circle,'+(isRest?'#38BDF818':'#E8FF4718')+' 0%,transparent 70%);filter:blur(16px);"></div>'
+    +'<svg style="position:absolute;transform:rotate(-90deg);" width="210" height="210" viewBox="0 0 210 210">'
+    +'<circle cx="105" cy="105" r="100" fill="none" stroke="#1E1E2A" stroke-width="4"/>'
+    +(showArc?'<circle id="rarc" cx="105" cy="105" r="100" fill="none" stroke="'+col+'" stroke-width="5" stroke-linecap="round" stroke-dasharray="'+circ+'" stroke-dashoffset="'+offset+'" style="transition:stroke-dashoffset 0.85s linear;"/>':'')
+    +(isFree?'<circle cx="105" cy="105" r="100" fill="none" stroke="#E8FF4718" stroke-width="8"/>':'')
+    +'</svg>'
+    +'<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 18px;text-align:center;">'
+    +center+'</div></div></div>'
+
+    +'<div style="margin-bottom:14px;">'+rows+'</div>'
+
+    +(nextLbl?'<div style="font-size:10px;letter-spacing:3px;color:#5050A0;text-align:center;margin-bottom:12px;">SIGUIENTE → '+nextLbl+'</div>':'')
+
+    +'<div style="display:flex;gap:10px;">'
+    +(isPrep
+      ?'<div style="flex:1;padding:16px;text-align:center;font-size:13px;letter-spacing:4px;color:#5050A0;background:#13131A;border:1px solid #1E1E2A;border-radius:10px;font-family:\'Bebas Neue\',sans-serif;">PREPARANDO…</div>'
+      :isWork
+        ?'<button class="ba" id="badv" style="flex:1;padding:18px;font-size:18px;letter-spacing:4px;">HECHO ✓</button>'
+        :'<button class="bn" id="bpau" style="flex:2;padding:16px;font-size:14px;letter-spacing:3px;">'+(run.paused?'▶ REANUDAR':'⏸ PAUSA')+'</button>'
+         +'<button class="ba" id="bskp" style="flex:1;padding:16px;font-size:13px;letter-spacing:2px;">SKIP →</button>')
+    +'</div>';
+
+  document.getElementById('bex').onclick=function(){if(confirm('¿Salir?')){clearInterval(timer);run=null;screen='home';go();}};
+  var badv=document.getElementById('badv');
+  if(badv) badv.onclick=advance;
+  var bpau=document.getElementById('bpau');
+  if(bpau) bpau.onclick=function(){run.paused=!run.paused;drawRun();};
+  var bskp=document.getElementById('bskp');
+  if(bskp) bskp.onclick=advance;
+}
+
+// ── wake lock ──
+var wl=null;
+function reqWL(){try{if('wakeLock' in navigator)navigator.wakeLock.request('screen').then(function(l){wl=l;}).catch(function(){});}catch(e){}}
+function relWL(){try{if(wl){wl.release();wl=null;}}catch(e){}}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&screen==='run') reqWL();
+  else relWL();
+});
+
+go();
+</script>
+</body>
+</html>
